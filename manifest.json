@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.zestybytes.deco-mesh",
   "name": "Deco Mesh",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "author": "ZestyBytes",
   "license": "MIT",
   "description": "See connected devices and mesh status for your TP-Link Deco network from the bar",
