@@ -1,5 +1,9 @@
 # Deco Mesh — Omarchy Plugin
 
+![Preview](preview.png)
+
+*(mock data shown above — not a real network)*
+
 An [Omarchy](https://omarchy.org) plugin that adds a bar icon for your
 TP-Link Deco mesh network. Click the icon to see every connected device
 grouped by which Deco node it's on, with live up/down speed, offline/online
