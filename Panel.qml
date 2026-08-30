@@ -481,6 +481,7 @@ Panel {
         spacing: Style.space(6)
 
         Text {
+          textFormat: Text.PlainText
           text: root.settingsMode ? "Deco Settings" : "Deco Mesh"
           color: root.barForeground
           font.family: Style.font.family
@@ -517,12 +518,14 @@ Panel {
             spacing: 0
 
             Text {
+              textFormat: Text.PlainText
               text: "Notifications"
               color: root.barForeground
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
             }
             Text {
+              textFormat: Text.PlainText
               text: "Alert when a device goes offline or comes back online"
               color: Qt.darker(root.barForeground, 1.5)
               font.family: Style.font.family
@@ -543,6 +546,7 @@ Panel {
         }
 
         Text {
+          textFormat: Text.PlainText
           text: "Router IP (e.g. 192.168.68.1)"
           color: root.barForeground
           font.family: Style.font.family
@@ -556,6 +560,7 @@ Panel {
         }
 
         Text {
+          textFormat: Text.PlainText
           text: "Admin username"
           color: root.barForeground
           font.family: Style.font.family
@@ -569,6 +574,7 @@ Panel {
         }
 
         Text {
+          textFormat: Text.PlainText
           text: "Admin password"
           color: root.barForeground
           font.family: Style.font.family
@@ -618,6 +624,7 @@ Panel {
       }
 
       Text {
+        textFormat: Text.PlainText
         visible: !root.settingsMode && !root.lastError && root.allClients.length === 0
         text: "No devices found."
         color: root.barForeground
@@ -653,6 +660,7 @@ Panel {
                 spacing: Style.space(6)
 
                 Text {
+                  textFormat: Text.PlainText
                   text: root.isNodeCollapsed(modelData.mac) ? "" : "" // fa-chevron-right : fa-chevron-down
                   color: root.barForeground
                   opacity: 0.6
@@ -660,6 +668,7 @@ Panel {
                   font.pixelSize: Style.font.caption
                 }
                 Text {
+                  textFormat: Text.PlainText
                   text: root.routerGlyph
                   color: root.barForeground
                   opacity: 0.8
@@ -667,6 +676,7 @@ Panel {
                   font.pixelSize: Style.font.caption
                 }
                 Text {
+                  textFormat: Text.PlainText
                   text: modelData.name + (modelData.role === "master" ? " (main)" : "")
                   color: root.barForeground
                   font.family: Style.font.family
@@ -676,6 +686,7 @@ Panel {
                   elide: Text.ElideRight
                 }
                 Text {
+                  textFormat: Text.PlainText
                   text: modelData.clients.length + " device" + (modelData.clients.length === 1 ? "" : "s")
                   color: root.barForeground
                   opacity: 0.5
@@ -686,6 +697,7 @@ Panel {
             }
 
             Text {
+              textFormat: Text.PlainText
               visible: !!modelData.via && !root.isNodeCollapsed(modelData.mac)
               text: "via " + modelData.via + (modelData.via_dbm !== null ? " (" + modelData.via_dbm + "dBm)" : "")
               color: root.barForeground
@@ -709,6 +721,7 @@ Panel {
                   color: modelData.online ? "#4caf50" : "#888888"
                 }
                 Text {
+                  textFormat: Text.PlainText
                   text: modelData.name
                   color: root.barForeground
                   font.family: Style.font.family
@@ -717,6 +730,7 @@ Panel {
                   elide: Text.ElideRight
                 }
                 Text {
+                  textFormat: Text.PlainText
                   // Active traffic is more useful to see at a glance than
                   // the IP, so it takes over this slot when there is any —
                   // both come from the same 60s poll, no extra fetch.
@@ -763,6 +777,7 @@ Panel {
                 spacing: Style.space(6)
 
                 Text {
+                  textFormat: Text.PlainText
                   text: root.offlineSectionExpanded ? "" : "" // fa-chevron-down : fa-chevron-right
                   color: root.barForeground
                   opacity: 0.6
@@ -770,6 +785,7 @@ Panel {
                   font.pixelSize: Style.font.caption
                 }
                 Text {
+                  textFormat: Text.PlainText
                   text: root.routerGlyph
                   color: root.barForeground
                   opacity: 0.8
@@ -777,6 +793,7 @@ Panel {
                   font.pixelSize: Style.font.caption
                 }
                 Text {
+                  textFormat: Text.PlainText
                   text: "Offline"
                   color: root.barForeground
                   opacity: 0.7
@@ -786,6 +803,7 @@ Panel {
                   Layout.fillWidth: true
                 }
                 Text {
+                  textFormat: Text.PlainText
                   text: root.offlineDevices.length + " device" + (root.offlineDevices.length === 1 ? "" : "s")
                   color: root.barForeground
                   opacity: 0.5
@@ -810,6 +828,7 @@ Panel {
                 color: "#e05c5c"
               }
               Text {
+                textFormat: Text.PlainText
                 text: modelData.name
                 color: root.barForeground
                 opacity: 0.7
@@ -819,6 +838,7 @@ Panel {
                 elide: Text.ElideRight
               }
               Text {
+                textFormat: Text.PlainText
                 // root.clock is read purely to create a binding dependency:
                 // Date.now() itself isn't a notifying property, so without
                 // something to re-trigger this binding on, it only ever
