@@ -29,7 +29,21 @@ Panel {
   readonly property real totalUpKbps: allClients.reduce(function (sum, d) { return sum + (d.up_kbps || 0) }, 0)
   property string lastError: ""
   property bool settingsMode: false
+
+  // Auto-expanded when there are few enough offline devices to be worth
+  // seeing at a glance (5 or fewer); collapsed for a longer list so it
+  // doesn't push the online tree below the fold. Once the user manually
+  // toggles it, that choice sticks — offlineDevicesChanged (below) stops
+  // overriding it — until the next plugin reload.
   property bool offlineSectionExpanded: false
+  property bool offlineSectionUserOverridden: false
+  readonly property int offlineAutoExpandThreshold: 5
+
+  onOfflineDevicesChanged: {
+    if (root.offlineSectionUserOverridden) return
+    root.offlineSectionExpanded = root.offlineDevices.length > 0
+      && root.offlineDevices.length <= root.offlineAutoExpandThreshold
+  }
 
   // Keyed by MAC (stable across DHCP renewals, unlike name/ip):
   // { online, name, nodeName, missCount }.
@@ -595,7 +609,10 @@ Panel {
               Layout.fillWidth: true
               implicitHeight: offlineHeaderRow.implicitHeight
               cursorShape: Qt.PointingHandCursor
-              onClicked: root.offlineSectionExpanded = !root.offlineSectionExpanded
+              onClicked: {
+                root.offlineSectionUserOverridden = true
+                root.offlineSectionExpanded = !root.offlineSectionExpanded
+              }
 
               RowLayout {
                 id: offlineHeaderRow
@@ -610,11 +627,12 @@ Panel {
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
                 }
-                Rectangle {
-                  width: Style.space(8)
-                  height: Style.space(8)
-                  radius: width / 2
-                  color: "#e05c5c"
+                Text {
+                  text: root.routerGlyph
+                  color: root.barForeground
+                  opacity: 0.8
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
                 }
                 Text {
                   text: "Offline"
