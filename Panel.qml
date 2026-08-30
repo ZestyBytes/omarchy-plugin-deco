@@ -43,6 +43,10 @@ Panel {
   // a field on the current entries.
   property var deviceOnlineState: ({})
 
+  // Defaults on (existing users keep getting notified unless they turn it
+  // off) — persisted alongside host/username/password in config.json.
+  property bool notifyEnabled: true
+
   function noteOnlineChanges(newDevices) {
     var seenMacs = {}
     for (var i = 0; i < newDevices.length; i++) {
@@ -51,7 +55,7 @@ Panel {
       seenMacs[device.mac] = true
       var previous = root.deviceOnlineState[device.mac]
       root.deviceOnlineState[device.mac] = { online: true, name: device.name }
-      if (previous !== undefined && previous.online === false) {
+      if (previous !== undefined && previous.online === false && root.notifyEnabled) {
         Quickshell.execDetached(["omarchy-notification-send", "--app-name", "Deco Mesh",
           "-g", root.routerGlyph, "-u", "low", device.name + " is back online"])
       }
@@ -63,8 +67,10 @@ Panel {
       var state = root.deviceOnlineState[mac]
       if (state.online === false) continue // already reported offline
       root.deviceOnlineState[mac] = { online: false, name: state.name }
-      Quickshell.execDetached(["omarchy-notification-send", "--app-name", "Deco Mesh",
-        "-g", root.routerGlyph, "-u", "normal", state.name + " went offline"])
+      if (root.notifyEnabled) {
+        Quickshell.execDetached(["omarchy-notification-send", "--app-name", "Deco Mesh",
+          "-g", root.routerGlyph, "-u", "normal", state.name + " went offline"])
+      }
     }
   }
 
@@ -123,7 +129,8 @@ Panel {
     var config = {
       host: root.fieldHost,
       username: root.fieldUsername,
-      password: root.fieldPassword
+      password: root.fieldPassword,
+      notifyEnabled: root.notifyEnabled
     }
     configFile.setText(JSON.stringify(config, null, 2))
     configFile.waitForJob()
@@ -131,6 +138,21 @@ Panel {
     root.testingConnection = true
     root.testMessage = ""
     root.refresh()
+  }
+
+  // Flipping the notification toggle shouldn't re-test the router
+  // connection (that's what the "Save" button on the credential fields is
+  // for) — just persist the current field values quietly.
+  function persistSettingsQuietly() {
+    var config = {
+      host: root.fieldHost,
+      username: root.fieldUsername,
+      password: root.fieldPassword,
+      notifyEnabled: root.notifyEnabled
+    }
+    configFile.setText(JSON.stringify(config, null, 2))
+    configFile.waitForJob()
+    chmodProc.running = true
   }
 
   FileView {
@@ -145,6 +167,7 @@ Panel {
         root.fieldHost = config.host || ""
         root.fieldUsername = config.username || "admin"
         root.fieldPassword = config.password || ""
+        root.notifyEnabled = config.notifyEnabled !== false
       } catch (e) { /* first run: no config yet */ }
     }
     onLoadFailed: {}
@@ -301,6 +324,40 @@ Panel {
         visible: root.settingsMode
         Layout.fillWidth: true
         spacing: Style.space(8)
+
+        RowLayout {
+          Layout.fillWidth: true
+          spacing: Style.space(8)
+
+          ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 0
+
+            Text {
+              text: "Notifications"
+              color: root.barForeground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+            Text {
+              text: "Alert when a device goes offline or comes back online"
+              color: Qt.darker(root.barForeground, 1.5)
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption * 0.85
+              wrapMode: Text.WordWrap
+              Layout.fillWidth: true
+            }
+          }
+
+          ToggleSwitch {
+            checked: root.notifyEnabled
+            foreground: root.barForeground
+            onToggled: {
+              root.notifyEnabled = !root.notifyEnabled
+              root.persistSettingsQuietly()
+            }
+          }
+        }
 
         Text {
           text: "Router IP (e.g. 192.168.68.1)"
