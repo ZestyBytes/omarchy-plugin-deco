@@ -127,6 +127,7 @@ Panel {
     }
     configFile.setText(JSON.stringify(config, null, 2))
     configFile.waitForJob()
+    chmodProc.running = true
     root.testingConnection = true
     root.testMessage = ""
     root.refresh()
@@ -151,7 +152,19 @@ Panel {
 
   Process {
     id: mkdirProc
-    command: ["mkdir", "-p", Quickshell.env("HOME") + "/.local/state/omarchy/deco-mesh"]
+    command: ["mkdir", "-m", "700", "-p", Quickshell.env("HOME") + "/.local/state/omarchy/deco-mesh"]
+  }
+
+  // FileView has no way to set the mode it writes with, and Omarchy's
+  // FileView has been observed writing 644 in a 755 dir — that would leave
+  // the router's admin password world-readable. Lock both down explicitly
+  // right after every write (mkdirProc above covers the directory on first
+  // run, but re-chmod it here too in case something else loosened it).
+  Process {
+    id: chmodProc
+    command: ["sh", "-c",
+      "chmod 700 '" + Quickshell.env("HOME") + "/.local/state/omarchy/deco-mesh' && " +
+      "chmod 600 '" + root.configPath + "'"]
   }
 
   // deco_status.py needs requests + pycryptodome, which aren't part of
@@ -169,6 +182,7 @@ Panel {
 
   Component.onCompleted: {
     mkdirProc.running = true
+    chmodProc.running = true  // covers a config.json left over from before this fix
     setupProc.running = true
   }
 
@@ -340,6 +354,7 @@ Panel {
         Text {
           visible: root.testMessage !== ""
           text: root.testMessage
+          textFormat: Text.PlainText
           color: root.testMessage.indexOf("Connected") === 0
             ? "#4caf50" : (root.bar ? root.bar.urgent : Color.urgent)
           font.family: Style.font.family
@@ -354,6 +369,7 @@ Panel {
       Text {
         visible: !root.settingsMode && root.lastError !== ""
         text: root.lastError
+        textFormat: Text.PlainText
         color: root.bar ? root.bar.urgent : Color.urgent
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
