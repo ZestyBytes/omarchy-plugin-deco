@@ -19,9 +19,11 @@ IP/username/password, with a live connection test before it saves.
 ## Requirements
 
 - Omarchy with plugin support (`omarchy plugin` commands)
-- Python 3 (already present on Omarchy) — the plugin builds its own
-  virtualenv with `requests` and `pycryptodome` the first time it loads (a
-  few seconds, once), so there's nothing to install by hand
+- Python 3 (already present on Omarchy) — the panel offers an "Install
+  dependencies" button on first use, which builds a local virtualenv and
+  installs `requests` and `pycryptodome` from pinned, hash-verified
+  versions (a few seconds, once). Nothing is installed automatically or
+  without that click
 - A TP-Link Deco mesh with local network access to it (tested on the X50;
   other Deco models use the same local API family and should work, but
   field names can vary by firmware — open an issue if something's off)

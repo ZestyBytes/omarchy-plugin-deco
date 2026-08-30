@@ -29,6 +29,15 @@ Panel {
   readonly property real totalUpKbps: allClients.reduce(function (sum, d) { return sum + (d.up_kbps || 0) }, 0)
   property string lastError: ""
 
+  // deco_status.py needs requests + pycryptodome, which aren't part of
+  // Omarchy's own Python. Installing them is a network fetch + code
+  // execution the user should ask for, not something enabling the plugin
+  // decides on its own — so this starts false and only flips once the user
+  // has clicked "Install dependencies" (see installDeps()) and the pinned,
+  // hash-verified install has actually succeeded.
+  property bool depsReady: false
+  property bool installingDeps: false
+
   // Ticks once a minute purely so the offline list's "Xm ago" labels stay
   // live while the panel is open, independent of the 60s poll cycle (see
   // the offline row's Text binding for why that alone isn't enough).
@@ -254,10 +263,22 @@ Panel {
   function toggle() { root.opened ? root.close() : root.open() }
 
   function refresh() {
-    if (statusProc.running) return
+    if (!root.depsReady || statusProc.running) return
     statusProc.capturedOut = ""
     statusProc.command = [root.pythonBin, root.statusScript]
     statusProc.running = true
+  }
+
+  // Only reached by an explicit "Install dependencies" click — never run
+  // automatically. Builds the venv, then installs the pinned, hashed
+  // requirements.txt with --require-hashes so the bytes that end up
+  // executing are exactly the ones this repo committed to, not whatever
+  // PyPI happens to serve that day.
+  function installDeps() {
+    if (root.installingDeps) return
+    root.installingDeps = true
+    root.lastError = ""
+    venvProc.running = true
   }
 
   function friendlyError(msg) {
@@ -362,27 +383,56 @@ Panel {
     command: ["chmod", "600", root.deviceStatePath]
   }
 
-  // deco_status.py needs requests + pycryptodome, which aren't part of
-  // Omarchy's own Python — rather than asking the user to set up a venv by
-  // hand, build one the first time this plugin ever loads (a few seconds,
-  // once) and reuse it on every load after.
+  // Pure existence check, run on every load — no shell involved, just argv.
+  // Only flips depsReady; never installs anything on its own.
   Process {
-    id: setupProc
-    command: ["sh", "-c",
-      "[ -x '" + root.pythonBin + "' ] || " +
-      "(python3 -m venv '" + root.pluginDir + "/venv' && " +
-      "'" + root.pythonBin + "' -m pip install -q -r '" + root.pluginDir + "/requirements.txt')"]
-    onExited: refreshTimer.running = true
+    id: checkDepsProc
+    command: ["test", "-x", root.pythonBin]
+    onExited: function (exitCode) {
+      root.depsReady = exitCode === 0
+      if (root.depsReady) refreshTimer.running = true
+    }
+  }
+
+  // installDeps() → venvProc → pipInstallProc. Kept as separate argv-only
+  // Processes (no "sh -c" string) so nothing here is ever built by
+  // interpolating a path into a shell program.
+  Process {
+    id: venvProc
+    command: ["python3", "-m", "venv", root.pluginDir + "/venv"]
+    onExited: function (exitCode) {
+      if (exitCode === 0) {
+        pipInstallProc.running = true
+      } else {
+        root.installingDeps = false
+        root.lastError = "Couldn't create the Python environment."
+      }
+    }
+  }
+
+  Process {
+    id: pipInstallProc
+    command: [root.pythonBin, "-m", "pip", "install", "-q",
+      "--require-hashes", "-r", root.pluginDir + "/requirements.txt"]
+    onExited: function (exitCode) {
+      root.installingDeps = false
+      root.depsReady = exitCode === 0
+      if (root.depsReady) {
+        refreshTimer.running = true
+      } else {
+        root.lastError = "Dependency install failed — check the plugin's requirements.txt."
+      }
+    }
   }
 
   Component.onCompleted: {
     mkdirProc.running = true
     chmodProc.running = true  // covers a config.json left over from before this fix
     deviceStateFile.reload()
-    deviceStateFile.waitForJob()  // must land before setupProc lets the first poll run
+    deviceStateFile.waitForJob()  // must land before refresh() can be called
     uiStateFile.reload()
     uiStateFile.waitForJob()
-    setupProc.running = true
+    checkDepsProc.running = true
   }
 
   Timer {
@@ -460,8 +510,9 @@ Panel {
     contentHeight: root.settingsMode
       ? Style.space(70) + settingsColumn.implicitHeight + Style.space(24)
       : Style.space(70) +
-        (root.lastError ? Style.space(40) : 0) +
-        (root.allClients.length === 0 && !root.lastError ? Style.space(40) : 0) +
+        (!root.depsReady ? Style.space(80) : 0) +
+        (root.depsReady && root.lastError ? Style.space(40) : 0) +
+        (root.depsReady && root.allClients.length === 0 && !root.lastError ? Style.space(40) : 0) +
         deviceColumn.implicitHeight + Style.space(20)
 
     PanelKeyCatcher {
@@ -613,7 +664,28 @@ Panel {
       // ---------------------------------------------------------- view
 
       Text {
-        visible: !root.settingsMode && root.lastError !== ""
+        visible: !root.settingsMode && !root.depsReady
+        text: root.installingDeps ? "Installing dependencies…" : "Dependencies not installed yet."
+        textFormat: Text.PlainText
+        color: root.barForeground
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
+        Layout.fillWidth: true
+      }
+
+      Button {
+        visible: !root.settingsMode && !root.depsReady
+        text: root.installingDeps ? "Installing…" : "Install dependencies"
+        enabled: !root.installingDeps
+        bordered: true
+        focusable: true
+        foreground: root.barForeground
+        onClicked: root.installDeps()
+      }
+
+      Text {
+        visible: !root.settingsMode && root.depsReady && root.lastError !== ""
         text: root.lastError
         textFormat: Text.PlainText
         color: root.bar ? root.bar.urgent : Color.urgent
@@ -625,7 +697,7 @@ Panel {
 
       Text {
         textFormat: Text.PlainText
-        visible: !root.settingsMode && !root.lastError && root.allClients.length === 0
+        visible: !root.settingsMode && root.depsReady && !root.lastError && root.allClients.length === 0
         text: "No devices found."
         color: root.barForeground
         font.family: Style.font.family
