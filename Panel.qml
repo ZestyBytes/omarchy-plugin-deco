@@ -56,6 +56,54 @@ Panel {
       && root.offlineDevices.length <= root.offlineAutoExpandThreshold
   }
 
+  // Per-node collapse state, keyed by node mac. Absent (or false) means
+  // expanded — only explicit collapses are stored, so a mesh node added
+  // later shows up expanded by default rather than needing an entry first.
+  property var nodeCollapsed: ({})
+  function isNodeCollapsed(mac) { return !!root.nodeCollapsed[mac] }
+  function toggleNodeCollapsed(mac) {
+    var next = Object.assign({}, root.nodeCollapsed)
+    next[mac] = !next[mac]
+    root.nodeCollapsed = next
+    root.saveUiState()
+  }
+
+  // Both the per-node collapse state above and the offline section's
+  // expand/override state, kept together in one small file so reopening
+  // the panel (or restarting the shell) remembers exactly how it was left.
+  readonly property string uiStatePath: Quickshell.env("HOME") + "/.local/state/omarchy/deco-mesh/ui-state.json"
+  function saveUiState() {
+    uiStateFile.setText(JSON.stringify({
+      nodeCollapsed: root.nodeCollapsed,
+      offlineSectionExpanded: root.offlineSectionExpanded,
+      offlineSectionUserOverridden: root.offlineSectionUserOverridden
+    }, null, 2))
+    uiStateFile.waitForJob()
+    uiStateChmodProc.running = true
+  }
+
+  FileView {
+    id: uiStateFile
+    path: root.uiStatePath
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: {
+      try {
+        var state = JSON.parse(text())
+        root.nodeCollapsed = state.nodeCollapsed || {}
+        root.offlineSectionExpanded = !!state.offlineSectionExpanded
+        root.offlineSectionUserOverridden = !!state.offlineSectionUserOverridden
+      } catch (e) { /* first run: no ui state yet */ }
+    }
+    onLoadFailed: {}
+  }
+
+  Process {
+    id: uiStateChmodProc
+    command: ["chmod", "600", root.uiStatePath]
+  }
+
   // Keyed by MAC (stable across DHCP renewals, unlike name/ip):
   // { online, name, nodeName, missCount }.
   //
@@ -332,6 +380,8 @@ Panel {
     chmodProc.running = true  // covers a config.json left over from before this fix
     deviceStateFile.reload()
     deviceStateFile.waitForJob()  // must land before setupProc lets the first poll run
+    uiStateFile.reload()
+    uiStateFile.waitForJob()
     setupProc.running = true
   }
 
@@ -590,37 +640,53 @@ Panel {
             Layout.fillWidth: true
             spacing: Style.space(3)
 
-            RowLayout {
+            MouseArea {
               Layout.fillWidth: true
-              spacing: Style.space(6)
+              implicitHeight: nodeHeaderRow.implicitHeight
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.toggleNodeCollapsed(modelData.mac)
 
-              Text {
-                text: root.routerGlyph
-                color: root.barForeground
-                opacity: 0.8
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-              }
-              Text {
-                text: modelData.name + (modelData.role === "master" ? " (main)" : "")
-                color: root.barForeground
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-                font.bold: true
-                Layout.fillWidth: true
-                elide: Text.ElideRight
-              }
-              Text {
-                text: modelData.clients.length + " device" + (modelData.clients.length === 1 ? "" : "s")
-                color: root.barForeground
-                opacity: 0.5
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
+              RowLayout {
+                id: nodeHeaderRow
+                anchors.left: parent.left
+                anchors.right: parent.right
+                spacing: Style.space(6)
+
+                Text {
+                  text: root.isNodeCollapsed(modelData.mac) ? "" : "" // fa-chevron-right : fa-chevron-down
+                  color: root.barForeground
+                  opacity: 0.6
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+                Text {
+                  text: root.routerGlyph
+                  color: root.barForeground
+                  opacity: 0.8
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+                Text {
+                  text: modelData.name + (modelData.role === "master" ? " (main)" : "")
+                  color: root.barForeground
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                  Layout.fillWidth: true
+                  elide: Text.ElideRight
+                }
+                Text {
+                  text: modelData.clients.length + " device" + (modelData.clients.length === 1 ? "" : "s")
+                  color: root.barForeground
+                  opacity: 0.5
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
               }
             }
 
             Text {
-              visible: !!modelData.via
+              visible: !!modelData.via && !root.isNodeCollapsed(modelData.mac)
               text: "via " + modelData.via + (modelData.via_dbm !== null ? " (" + modelData.via_dbm + "dBm)" : "")
               color: root.barForeground
               opacity: 0.5
@@ -630,7 +696,7 @@ Panel {
             }
 
             Repeater {
-              model: modelData.clients
+              model: root.isNodeCollapsed(modelData.mac) ? [] : modelData.clients
               delegate: RowLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: Style.space(18)
@@ -687,6 +753,7 @@ Panel {
               onClicked: {
                 root.offlineSectionUserOverridden = true
                 root.offlineSectionExpanded = !root.offlineSectionExpanded
+                root.saveUiState()
               }
 
               RowLayout {
@@ -696,7 +763,7 @@ Panel {
                 spacing: Style.space(6)
 
                 Text {
-                  text: root.offlineSectionExpanded ? "" : "" // fa-chevron-down : fa-chevron-right
+                  text: root.offlineSectionExpanded ? "" : "" // fa-chevron-down : fa-chevron-right
                   color: root.barForeground
                   opacity: 0.6
                   font.family: Style.font.family
