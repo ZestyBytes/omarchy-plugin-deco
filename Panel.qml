@@ -61,8 +61,21 @@ Panel {
   // vanish from a single poll's client_list. Requiring 2 misses in a row
   // (worst case ~60s slower to notice a real disconnect) filters that out
   // without meaningfully delaying real offline detection.
+  // Persisted to deviceStatePath (see below) so this survives an
+  // omarchy-restart-shell or a plugin reload — without that, a device that
+  // went offline just before a restart is never noticed: the very first
+  // poll after restart has nothing to compare against (see the "never on
+  // the very first check" reasoning below), so its absence is silently
+  // taken as "never seen it, nothing to report" instead of "was online,
+  // now isn't".
   property var deviceState: ({})
   readonly property int offlineMissThreshold: 2
+
+  // Devices offline longer than this are dropped from deviceState entirely
+  // (not just hidden) — a guest's phone seen once months ago shouldn't be
+  // remembered, and reported as "offline", forever. Pruned in
+  // noteOnlineChanges, right before offlineDevices is rebuilt.
+  readonly property int offlineRetentionMs: 24 * 60 * 60 * 1000
 
   // Every currently-known-offline device, for the collapsible "Offline"
   // section below — explicitly reassigned (not mutated in place) whenever
@@ -79,7 +92,18 @@ Panel {
   // off) — persisted alongside host/username/password in config.json.
   property bool notifyEnabled: true
 
+  function formatElapsed(ms) {
+    var s = Math.floor(ms / 1000)
+    if (s < 60) return "just now"
+    var m = Math.floor(s / 60)
+    if (m < 60) return m + "m ago"
+    var h = Math.floor(m / 60)
+    if (h < 24) return h + "h ago"
+    return Math.floor(h / 24) + "d ago"
+  }
+
   function noteOnlineChanges(newDevices) {
+    var now = Date.now()
     var seenMacs = {}
     for (var i = 0; i < newDevices.length; i++) {
       var device = newDevices[i]
@@ -89,7 +113,7 @@ Panel {
       var wasOffline = previous !== undefined && previous.online === false
       root.deviceState[device.mac] = {
         online: true, name: device.name, mac: device.mac,
-        nodeName: device.nodeName, missCount: 0
+        nodeName: device.nodeName, missCount: 0, offlineSince: 0
       }
       if (wasOffline && root.notifyEnabled) {
         Quickshell.execDetached(["omarchy-notification-send", "--app-name", "Deco Mesh",
@@ -102,17 +126,22 @@ Panel {
       var mac = macs[j]
       if (seenMacs[mac]) continue
       var state = root.deviceState[mac]
-      if (state.online === false) continue // already offline, nothing to do
+      if (state.online === false) {
+        // Already offline — drop it entirely once it's been gone long
+        // enough that it's not worth remembering any more.
+        if (now - state.offlineSince > root.offlineRetentionMs) delete root.deviceState[mac]
+        continue
+      }
 
       var missCount = (state.missCount || 0) + 1
       if (missCount < root.offlineMissThreshold) {
         // Not offline yet — could be a roaming blip or a mid-handoff poll.
         root.deviceState[mac] = { online: true, name: state.name, mac: mac,
-          nodeName: state.nodeName, missCount: missCount }
+          nodeName: state.nodeName, missCount: missCount, offlineSince: 0 }
         continue
       }
       root.deviceState[mac] = { online: false, name: state.name, mac: mac,
-        nodeName: state.nodeName, missCount: missCount }
+        nodeName: state.nodeName, missCount: missCount, offlineSince: now }
       if (root.notifyEnabled) {
         Quickshell.execDetached(["omarchy-notification-send", "--app-name", "Deco Mesh",
           "-g", root.routerGlyph, "-u", "normal", state.name + " went offline"])
@@ -123,6 +152,14 @@ Panel {
       .map(function (m) { return root.deviceState[m] })
       .filter(function (d) { return !d.online })
       .sort(function (a, b) { return a.name.localeCompare(b.name) })
+
+    root.saveDeviceState()
+  }
+
+  function saveDeviceState() {
+    deviceStateFile.setText(JSON.stringify(root.deviceState, null, 2))
+    deviceStateFile.waitForJob()
+    deviceStateChmodProc.running = true
   }
 
   property string fieldHost: ""
@@ -133,6 +170,7 @@ Panel {
   // config there: Omarchy hot-reloads the whole plugin on any file change
   // under its own directory, and refreshes would otherwise retrigger that.
   readonly property string configPath: Quickshell.env("HOME") + "/.local/state/omarchy/deco-mesh/config.json"
+  readonly property string deviceStatePath: Quickshell.env("HOME") + "/.local/state/omarchy/deco-mesh/device-state.json"
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/io.github.zestybytes.deco-mesh"
   readonly property string pythonBin: root.pluginDir + "/venv/bin/python3"
   readonly property string statusScript: root.pluginDir + "/deco_status.py"
@@ -224,6 +262,22 @@ Panel {
     onLoadFailed: {}
   }
 
+  // See deviceState above for why this exists — without it, "offline"
+  // history is lost on every restart. Loaded synchronously in
+  // Component.onCompleted, before setupProc can let the first poll run, so
+  // that poll always has real prior state to diff against.
+  FileView {
+    id: deviceStateFile
+    path: root.deviceStatePath
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: {
+      try { root.deviceState = JSON.parse(text()) } catch (e) { root.deviceState = {} }
+    }
+    onLoadFailed: { root.deviceState = {} }
+  }
+
   Process {
     id: mkdirProc
     command: ["mkdir", "-m", "700", "-p", Quickshell.env("HOME") + "/.local/state/omarchy/deco-mesh"]
@@ -239,6 +293,14 @@ Panel {
     command: ["sh", "-c",
       "chmod 700 '" + Quickshell.env("HOME") + "/.local/state/omarchy/deco-mesh' && " +
       "chmod 600 '" + root.configPath + "'"]
+  }
+
+  // device-state.json isn't credential-bearing like config.json, but it's a
+  // history of MACs/device names seen on the network — still worth keeping
+  // to the same 600 as everything else in this directory.
+  Process {
+    id: deviceStateChmodProc
+    command: ["chmod", "600", root.deviceStatePath]
   }
 
   // deco_status.py needs requests + pycryptodome, which aren't part of
@@ -257,6 +319,8 @@ Panel {
   Component.onCompleted: {
     mkdirProc.running = true
     chmodProc.running = true  // covers a config.json left over from before this fix
+    deviceStateFile.reload()
+    deviceStateFile.waitForJob()  // must land before setupProc lets the first poll run
     setupProc.running = true
   }
 
@@ -677,8 +741,8 @@ Panel {
                 elide: Text.ElideRight
               }
               Text {
-                visible: !!modelData.nodeName
-                text: "last on " + modelData.nodeName
+                text: (modelData.nodeName ? modelData.nodeName + " · " : "")
+                  + root.formatElapsed(Date.now() - modelData.offlineSince)
                 color: root.barForeground
                 opacity: 0.4
                 font.family: Style.font.family
