@@ -28,6 +28,17 @@ Panel {
   readonly property real totalDownKbps: allClients.reduce(function (sum, d) { return sum + (d.down_kbps || 0) }, 0)
   readonly property real totalUpKbps: allClients.reduce(function (sum, d) { return sum + (d.up_kbps || 0) }, 0)
   property string lastError: ""
+
+  // Ticks once a minute purely so the offline list's "Xm ago" labels stay
+  // live while the panel is open, independent of the 60s poll cycle (see
+  // the offline row's Text binding for why that alone isn't enough).
+  property int clock: 0
+  Timer {
+    interval: 60000
+    running: true
+    repeat: true
+    onTriggered: root.clock++
+  }
   property bool settingsMode: false
 
   // Auto-expanded when there are few enough offline devices to be worth
@@ -708,7 +719,7 @@ Panel {
                   Layout.fillWidth: true
                 }
                 Text {
-                  text: root.offlineDevices.length
+                  text: root.offlineDevices.length + " device" + (root.offlineDevices.length === 1 ? "" : "s")
                   color: root.barForeground
                   opacity: 0.5
                   font.family: Style.font.family
@@ -741,8 +752,14 @@ Panel {
                 elide: Text.ElideRight
               }
               Text {
-                text: (modelData.nodeName ? modelData.nodeName + " · " : "")
-                  + root.formatElapsed(Date.now() - modelData.offlineSince)
+                // root.clock is read purely to create a binding dependency:
+                // Date.now() itself isn't a notifying property, so without
+                // something to re-trigger this binding on, it only ever
+                // recomputes when the delegate is freshly created — leaving
+                // it stuck on "just now" until the next full model reset,
+                // which isn't guaranteed every poll (see the clock Timer
+                // below).
+                text: { var _t = root.clock; return root.formatElapsed(Date.now() - modelData.offlineSince) }
                 color: root.barForeground
                 opacity: 0.4
                 font.family: Style.font.family
