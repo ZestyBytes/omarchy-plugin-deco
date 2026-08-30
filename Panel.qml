@@ -29,20 +29,38 @@ Panel {
   readonly property real totalUpKbps: allClients.reduce(function (sum, d) { return sum + (d.up_kbps || 0) }, 0)
   property string lastError: ""
   property bool settingsMode: false
+  property bool offlineSectionExpanded: false
 
-  // Keyed by MAC (stable across DHCP renewals, unlike name/ip): { online, name }.
-  // Fires a notification only on an actual state *change*, never for a
-  // device that's simply always offline, and never on the very first check
-  // each session (nothing to compare against yet) — same reasoning as
-  // tapo-cameras' offline/online check.
+  // Keyed by MAC (stable across DHCP renewals, unlike name/ip):
+  // { online, name, nodeName, missCount }.
   //
   // The Deco client_list only ever lists devices that are currently
   // connected — an offline device doesn't appear with online:false, it's
   // just absent from the array. So "offline" has to be inferred as
   // "a MAC we'd previously seen is missing from this fetch", not read off
   // a field on the current entries.
-  property var deviceOnlineState: ({})
+  //
+  // A device has to be missing for `offlineMissThreshold` consecutive polls
+  // before it's actually marked offline / notified about, not just one —
+  // roaming between this mesh's 3 nodes, or a client whose OS rotates its
+  // MAC ("private Wi-Fi address"), can both make a still-connected device
+  // vanish from a single poll's client_list. Requiring 2 misses in a row
+  // (worst case ~60s slower to notice a real disconnect) filters that out
+  // without meaningfully delaying real offline detection.
+  property var deviceState: ({})
+  readonly property int offlineMissThreshold: 2
 
+  // Every currently-known-offline device, for the collapsible "Offline"
+  // section below — explicitly reassigned (not mutated in place) whenever
+  // it changes so the Repeater bound to it actually re-renders, same
+  // reasoning as `nodes` further down.
+  property var offlineDevices: []
+
+  // Fires a notification only on an actual state *change*, never for a
+  // device that's simply always offline, and never on the very first check
+  // each session (nothing to compare against yet) — same reasoning as
+  // tapo-cameras' offline/online check.
+  //
   // Defaults on (existing users keep getting notified unless they turn it
   // off) — persisted alongside host/username/password in config.json.
   property bool notifyEnabled: true
@@ -53,25 +71,44 @@ Panel {
       var device = newDevices[i]
       if (!device.mac) continue
       seenMacs[device.mac] = true
-      var previous = root.deviceOnlineState[device.mac]
-      root.deviceOnlineState[device.mac] = { online: true, name: device.name }
-      if (previous !== undefined && previous.online === false && root.notifyEnabled) {
+      var previous = root.deviceState[device.mac]
+      var wasOffline = previous !== undefined && previous.online === false
+      root.deviceState[device.mac] = {
+        online: true, name: device.name, mac: device.mac,
+        nodeName: device.nodeName, missCount: 0
+      }
+      if (wasOffline && root.notifyEnabled) {
         Quickshell.execDetached(["omarchy-notification-send", "--app-name", "Deco Mesh",
           "-g", root.routerGlyph, "-u", "low", device.name + " is back online"])
       }
     }
-    var macs = Object.keys(root.deviceOnlineState)
+
+    var macs = Object.keys(root.deviceState)
     for (var j = 0; j < macs.length; j++) {
       var mac = macs[j]
       if (seenMacs[mac]) continue
-      var state = root.deviceOnlineState[mac]
-      if (state.online === false) continue // already reported offline
-      root.deviceOnlineState[mac] = { online: false, name: state.name }
+      var state = root.deviceState[mac]
+      if (state.online === false) continue // already offline, nothing to do
+
+      var missCount = (state.missCount || 0) + 1
+      if (missCount < root.offlineMissThreshold) {
+        // Not offline yet — could be a roaming blip or a mid-handoff poll.
+        root.deviceState[mac] = { online: true, name: state.name, mac: mac,
+          nodeName: state.nodeName, missCount: missCount }
+        continue
+      }
+      root.deviceState[mac] = { online: false, name: state.name, mac: mac,
+        nodeName: state.nodeName, missCount: missCount }
       if (root.notifyEnabled) {
         Quickshell.execDetached(["omarchy-notification-send", "--app-name", "Deco Mesh",
           "-g", root.routerGlyph, "-u", "normal", state.name + " went offline"])
       }
     }
+
+    root.offlineDevices = Object.keys(root.deviceState)
+      .map(function (m) { return root.deviceState[m] })
+      .filter(function (d) { return !d.online })
+      .sort(function (a, b) { return a.name.localeCompare(b.name) })
   }
 
   property string fieldHost: ""
@@ -234,7 +271,14 @@ Panel {
         } else {
           newNodes = result.nodes || []
           var flatClients = []
-          for (var i = 0; i < newNodes.length; i++) flatClients = flatClients.concat(newNodes[i].clients)
+          for (var i = 0; i < newNodes.length; i++) {
+            var nodeName = newNodes[i].name
+            var tagged = newNodes[i].clients.map(function (c) {
+              return { name: c.name, ip: c.ip, mac: c.mac, online: c.online,
+                down_kbps: c.down_kbps, up_kbps: c.up_kbps, nodeName: nodeName }
+            })
+            flatClients = flatClients.concat(tagged)
+          }
           root.noteOnlineChanges(flatClients)
         }
       } catch (e) {
@@ -529,6 +573,98 @@ Panel {
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
                 }
+              }
+            }
+          }
+        }
+
+        // Collapsed by default — a big offline count from a first-ever poll
+        // (nothing to compare against yet, see noteOnlineChanges) or a
+        // household with several always-off devices would otherwise push
+        // the online tree below the fold every time the panel opens.
+        ColumnLayout {
+          Layout.fillWidth: true
+          visible: root.offlineDevices.length > 0
+          spacing: Style.space(3)
+
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(6)
+
+            MouseArea {
+              Layout.fillWidth: true
+              implicitHeight: offlineHeaderRow.implicitHeight
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.offlineSectionExpanded = !root.offlineSectionExpanded
+
+              RowLayout {
+                id: offlineHeaderRow
+                anchors.left: parent.left
+                anchors.right: parent.right
+                spacing: Style.space(6)
+
+                Text {
+                  text: root.offlineSectionExpanded ? "" : "" // fa-chevron-down : fa-chevron-right
+                  color: root.barForeground
+                  opacity: 0.6
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+                Rectangle {
+                  width: Style.space(8)
+                  height: Style.space(8)
+                  radius: width / 2
+                  color: "#e05c5c"
+                }
+                Text {
+                  text: "Offline"
+                  color: root.barForeground
+                  opacity: 0.7
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                  Layout.fillWidth: true
+                }
+                Text {
+                  text: root.offlineDevices.length
+                  color: root.barForeground
+                  opacity: 0.5
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+              }
+            }
+          }
+
+          Repeater {
+            model: root.offlineSectionExpanded ? root.offlineDevices : []
+            delegate: RowLayout {
+              Layout.fillWidth: true
+              Layout.leftMargin: Style.space(18)
+              spacing: Style.space(6)
+
+              Rectangle {
+                width: Style.space(8)
+                height: Style.space(8)
+                radius: width / 2
+                color: "#e05c5c"
+              }
+              Text {
+                text: modelData.name
+                color: root.barForeground
+                opacity: 0.7
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+              }
+              Text {
+                visible: !!modelData.nodeName
+                text: "last on " + modelData.nodeName
+                color: root.barForeground
+                opacity: 0.4
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
               }
             }
           }
