@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
@@ -27,6 +28,7 @@ Panel {
   readonly property int onlineCount: allClients.filter(function (d) { return d.online }).length
   readonly property real totalDownKbps: allClients.reduce(function (sum, d) { return sum + (d.down_kbps || 0) }, 0)
   readonly property real totalUpKbps: allClients.reduce(function (sum, d) { return sum + (d.up_kbps || 0) }, 0)
+  readonly property int maximumPopupHeight: Style.space(560)
   property string lastError: ""
 
   // deco_status.py needs requests + pycryptodome, which aren't part of
@@ -501,19 +503,14 @@ Panel {
 
   KeyboardPanel {
     id: panel
+    objectName: "decoPopup"
     anchorItem: button
     owner: root
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: Style.space(340)
-    contentHeight: root.settingsMode
-      ? Style.space(70) + settingsColumn.implicitHeight + Style.space(24)
-      : Style.space(70) +
-        (!root.depsReady ? Style.space(80) : 0) +
-        (root.depsReady && root.lastError ? Style.space(40) : 0) +
-        (root.depsReady && root.allClients.length === 0 && !root.lastError ? Style.space(40) : 0) +
-        deviceColumn.implicitHeight + Style.space(20)
+    contentWidth: panel.fittedContentWidth(Style.space(340))
+    contentHeight: panel.fittedContentHeight(scrollContent.implicitHeight, root.maximumPopupHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -522,10 +519,36 @@ Panel {
       onTabRequested: function (direction) { root.switchPanel(direction) }
     }
 
-    ColumnLayout {
+    ScrollView {
+      id: scrollArea
+      objectName: "deviceScrollArea"
       anchors.fill: parent
-      anchors.margins: Style.space(16)
-      spacing: Style.space(10)
+      clip: true
+      ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+      ScrollBar.vertical: ScrollBar {
+        id: deviceScrollBar
+        objectName: "deviceScrollBar"
+        policy: scrollContent.implicitHeight > scrollArea.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+      }
+
+      Binding {
+        target: scrollArea.contentItem
+        property: "interactive"
+        value: scrollContent.implicitHeight > scrollArea.height
+      }
+
+      Item {
+        id: scrollContent
+        width: scrollArea.availableWidth
+        implicitHeight: contentColumn.implicitHeight + Style.space(32)
+
+        ColumnLayout {
+          id: contentColumn
+          anchors.top: parent.top
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.margins: Style.space(16)
+          spacing: Style.space(10)
 
       RowLayout {
         Layout.fillWidth: true
@@ -927,7 +950,9 @@ Panel {
             }
           }
         }
+        }
       }
     }
   }
+}
 }
