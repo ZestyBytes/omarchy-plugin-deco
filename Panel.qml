@@ -237,10 +237,18 @@ Panel {
   // Outside the plugin directory for the same reason tapo-cameras keeps its
   // config there: Omarchy hot-reloads the whole plugin on any file change
   // under its own directory, and refreshes would otherwise retrigger that.
-  readonly property string configPath: Quickshell.env("HOME") + "/.local/state/omarchy/deco-mesh/config.json"
+  readonly property string stateDir: Quickshell.env("HOME") + "/.local/state/omarchy/deco-mesh"
+  readonly property string configPath: root.stateDir + "/config.json"
   readonly property string deviceStatePath: Quickshell.env("HOME") + "/.local/state/omarchy/deco-mesh/device-state.json"
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/io.github.zestybytes.deco-mesh"
-  readonly property string pythonBin: root.pluginDir + "/venv/bin/python3"
+  // The venv lives in the state dir, NOT the plugin dir: venvs contain
+  // symlinks (bin/python, lib64), which `omarchy plugin update` rejects
+  // inside a plugin folder (rolling the update back), and writing there
+  // also triggers Omarchy's plugin hot-reload. A missing venv here (e.g.
+  // after upgrading from a version that built it in the plugin dir) just
+  // shows the "Install dependencies" flow again.
+  readonly property string venvDir: root.stateDir + "/venv"
+  readonly property string pythonBin: root.venvDir + "/bin/python3"
   readonly property string statusScript: root.pluginDir + "/deco_status.py"
   readonly property string routerGlyph: "󱂇"
 
@@ -278,7 +286,7 @@ Panel {
     if (root.installingDeps) return
     root.installingDeps = true
     root.lastError = ""
-    venvProc.running = true
+    venvDirProc.running = true
   }
 
   function friendlyError(msg) {
@@ -360,7 +368,7 @@ Panel {
 
   Process {
     id: mkdirProc
-    command: ["mkdir", "-m", "700", "-p", Quickshell.env("HOME") + "/.local/state/omarchy/deco-mesh"]
+    command: ["mkdir", "-m", "700", "-p", root.stateDir]
   }
 
   // FileView has no way to set the mode it writes with, and Omarchy's
@@ -394,7 +402,7 @@ Panel {
     }
   }
 
-  // installDeps() → venvProc → ensurepipProc → pipInstallProc. Kept as
+  // installDeps() → venvDirProc → venvProc → ensurepipProc → pipInstallProc. Kept as
   // separate argv-only Processes (no "sh -c" string) so nothing here is ever
   // built by interpolating a path into a shell program. ensurepip installs the
   // pip wheel bundled with CPython (offline, no PyPI fetch), because some
@@ -407,9 +415,24 @@ Panel {
     console.warn("deco-mesh: " + step + " failed (exit " + exitCode + "): " + stderrText)
   }
 
+  // Make sure the 0700 state dir exists before building the venv inside it
+  // (mkdirProc on load is async, so don't rely on it having finished).
+  Process {
+    id: venvDirProc
+    command: ["mkdir", "-m", "700", "-p", root.stateDir]
+    stderr: StdioCollector { id: venvDirErr; waitForEnd: true }
+    onExited: function (exitCode) {
+      if (exitCode === 0) {
+        venvProc.running = true
+      } else {
+        root.installStepFailed("Creating the state directory", exitCode, venvDirErr.text)
+      }
+    }
+  }
+
   Process {
     id: venvProc
-    command: ["python3", "-m", "venv", root.pluginDir + "/venv"]
+    command: ["python3", "-m", "venv", root.venvDir]
     stderr: StdioCollector { id: venvErr; waitForEnd: true }
     onExited: function (exitCode) {
       if (exitCode === 0) {
