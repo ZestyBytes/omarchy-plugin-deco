@@ -20,7 +20,9 @@ IP/username/password, with a live connection test before it saves.
 
 - Omarchy with plugin support (`omarchy plugin` commands)
 - Python 3 (already present on Omarchy) — the panel offers an "Install
-  dependencies" button on first use, which builds a local virtualenv and
+  dependencies" button on first use, which builds a virtualenv at
+  `~/.local/state/omarchy/deco-mesh/venv` (outside the plugin folder, which
+  must not contain symlinks) and
   installs `requests` and `pycryptodome` from pinned, hash-verified
   versions (a few seconds, once). Nothing is installed automatically or
   without that click
@@ -48,6 +50,12 @@ omarchy plugin disable io.github.zestybytes.deco-mesh
 rm -rf ~/.config/omarchy/plugins/io.github.zestybytes.deco-mesh
 rm -rf ~/.local/state/omarchy/deco-mesh
 ```
+
+That last line also removes the Python virtualenv. Upgrading from an older
+version that built its venv inside the plugin folder? Delete it with
+`rm -rf ~/.config/omarchy/plugins/io.github.zestybytes.deco-mesh/venv` (its
+symlinks make `omarchy plugin update` fail), then click "Install
+dependencies" once in the panel.
 
 ## How it works
 
