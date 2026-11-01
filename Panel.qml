@@ -495,9 +495,15 @@ Panel {
     property string capturedOut: ""
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: statusProc.capturedOut = String(text || "").trim()
+      // Parse here, not in onExited: Process.exited can fire before the
+      // stdout collector has delivered its text, which made JSON.parse("")
+      // throw and show "Couldn't read status" intermittently.
+      onStreamFinished: {
+        statusProc.capturedOut = String(text || "").trim()
+        statusProc.handleResult()
+      }
     }
-    onExited: {
+    function handleResult() {
       var newNodes = []
       var errorText = ""
       try {
