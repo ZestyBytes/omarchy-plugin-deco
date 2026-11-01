@@ -394,18 +394,41 @@ Panel {
     }
   }
 
-  // installDeps() → venvProc → pipInstallProc. Kept as separate argv-only
-  // Processes (no "sh -c" string) so nothing here is ever built by
-  // interpolating a path into a shell program.
+  // installDeps() → venvProc → ensurepipProc → pipInstallProc. Kept as
+  // separate argv-only Processes (no "sh -c" string) so nothing here is ever
+  // built by interpolating a path into a shell program. ensurepip installs the
+  // pip wheel bundled with CPython (offline, no PyPI fetch), because some
+  // distros (e.g. Arch) can create a venv without pip, which made the pip
+  // step fail with "No module named pip".
+  function installStepFailed(step, exitCode, stderrText) {
+    root.installingDeps = false
+    var detail = String(stderrText || "").trim().split("\n").pop()
+    root.lastError = step + " failed (exit " + exitCode + ")" + (detail ? ": " + detail : ".")
+    console.warn("deco-mesh: " + step + " failed (exit " + exitCode + "): " + stderrText)
+  }
+
   Process {
     id: venvProc
     command: ["python3", "-m", "venv", root.pluginDir + "/venv"]
+    stderr: StdioCollector { id: venvErr; waitForEnd: true }
+    onExited: function (exitCode) {
+      if (exitCode === 0) {
+        ensurepipProc.running = true
+      } else {
+        root.installStepFailed("Creating the Python environment", exitCode, venvErr.text)
+      }
+    }
+  }
+
+  Process {
+    id: ensurepipProc
+    command: [root.pythonBin, "-m", "ensurepip", "--default-pip"]
+    stderr: StdioCollector { id: ensurepipErr; waitForEnd: true }
     onExited: function (exitCode) {
       if (exitCode === 0) {
         pipInstallProc.running = true
       } else {
-        root.installingDeps = false
-        root.lastError = "Couldn't create the Python environment."
+        root.installStepFailed("Installing pip into the venv", exitCode, ensurepipErr.text)
       }
     }
   }
@@ -414,13 +437,14 @@ Panel {
     id: pipInstallProc
     command: [root.pythonBin, "-m", "pip", "install", "-q",
       "--require-hashes", "-r", root.pluginDir + "/requirements.txt"]
+    stderr: StdioCollector { id: pipErr; waitForEnd: true }
     onExited: function (exitCode) {
-      root.installingDeps = false
       root.depsReady = exitCode === 0
       if (root.depsReady) {
+        root.installingDeps = false
         refreshTimer.running = true
       } else {
-        root.lastError = "Dependency install failed — check the plugin's requirements.txt."
+        root.installStepFailed("Dependency install", exitCode, pipErr.text)
       }
     }
   }
@@ -511,7 +535,7 @@ Panel {
       ? Style.space(70) + settingsColumn.implicitHeight + Style.space(24)
       : Style.space(70) +
         (!root.depsReady ? Style.space(80) : 0) +
-        (root.depsReady && root.lastError ? Style.space(40) : 0) +
+        (root.lastError ? Style.space(40) : 0) +
         (root.depsReady && root.allClients.length === 0 && !root.lastError ? Style.space(40) : 0) +
         deviceColumn.implicitHeight + Style.space(20)
 
@@ -685,7 +709,7 @@ Panel {
       }
 
       Text {
-        visible: !root.settingsMode && root.depsReady && root.lastError !== ""
+        visible: !root.settingsMode && root.lastError !== ""
         text: root.lastError
         textFormat: Text.PlainText
         color: root.bar ? root.bar.urgent : Color.urgent

@@ -26,6 +26,10 @@ from Crypto.Util.number import bytes_to_long
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# Seconds per HTTPS request. The first login to a Deco X50 can take >5s
+# (RSA key exchange on the router), so 5s timed out on real hardware.
+REQUEST_TIMEOUT = 20
+
 CONFIG_PATH = os.path.expanduser("~/.local/state/omarchy/deco-mesh/config.json")
 
 
@@ -53,14 +57,14 @@ class Deco:
         r = requests.post(
             self._base_url(), params={"form": "keys"},
             data={"operation": "read"}, headers={"Referer": referer},
-            timeout=5, verify=False,
+            timeout=REQUEST_TIMEOUT, verify=False,
         )
         pw_key = r.json()["result"]["password"]
 
         r = requests.post(
             self._base_url(), params={"form": "auth"},
             data={"operation": "read"}, headers={"Referer": referer},
-            timeout=5, verify=False,
+            timeout=REQUEST_TIMEOUT, verify=False,
         )
         auth_key = r.json()["result"]["key"]
         self.rsa_seq = r.json()["result"]["seq"]
@@ -102,7 +106,7 @@ class Deco:
                 "Content-Type": "application/json",
                 "X-Requested-With": "XMLHttpRequest",
             },
-            timeout=5, verify=False,
+            timeout=REQUEST_TIMEOUT, verify=False,
         )
         result_b64 = r.json().get("data")
         if not result_b64:
@@ -151,7 +155,7 @@ class Deco:
                 "Content-Type": "application/json",
                 "X-Requested-With": "XMLHttpRequest",
             },
-            cookies={"sysauth": self.sysauth}, timeout=5, verify=False,
+            cookies={"sysauth": self.sysauth}, timeout=REQUEST_TIMEOUT, verify=False,
         )
         decrypted = self._decrypt(r.json()["data"])
         if decrypted.get("error_code") != 0:
@@ -170,7 +174,7 @@ class Deco:
                 "Content-Type": "application/json",
                 "X-Requested-With": "XMLHttpRequest",
             },
-            cookies={"sysauth": self.sysauth}, timeout=5, verify=False,
+            cookies={"sysauth": self.sysauth}, timeout=REQUEST_TIMEOUT, verify=False,
         )
         decrypted = self._decrypt(r.json()["data"])
         if decrypted.get("error_code") != 0:
@@ -192,7 +196,7 @@ class Deco:
                 "Content-Type": "application/json",
                 "X-Requested-With": "XMLHttpRequest",
             },
-            cookies={"sysauth": self.sysauth}, timeout=5, verify=False,
+            cookies={"sysauth": self.sysauth}, timeout=REQUEST_TIMEOUT, verify=False,
         )
         decrypted = self._decrypt(r.json()["data"])
         if decrypted.get("error_code") != 0:
@@ -203,7 +207,7 @@ class Deco:
         requests.post(
             url, params={"form": "logout", "operation": "write"},
             headers={"Referer": f"https://{self.host}/webpages/index.html"},
-            cookies={"sysauth": self.sysauth}, timeout=5, verify=False,
+            cookies={"sysauth": self.sysauth}, timeout=REQUEST_TIMEOUT, verify=False,
         )
 
 
