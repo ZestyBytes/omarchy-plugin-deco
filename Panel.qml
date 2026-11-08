@@ -587,7 +587,7 @@ Panel {
         Text {
           textFormat: Text.PlainText
           text: root.settingsMode ? "Deco Settings" : "Deco Mesh"
-          color: root.barForeground
+          color: Color.popups.text
           font.family: Style.font.family
           font.pixelSize: Style.font.body
           font.bold: true
@@ -597,7 +597,7 @@ Panel {
         PanelActionButton {
           iconText: root.settingsMode ? "" : "" // fa-arrow-left : fa-cog
           tooltipText: root.settingsMode ? "Back" : "Deco settings"
-          foreground: root.barForeground
+          foreground: Color.popups.text
           onClicked: {
             root.settingsMode = !root.settingsMode
             root.testMessage = ""
@@ -624,14 +624,14 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: "Notifications"
-              color: root.barForeground
+              color: Color.popups.text
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
             }
             Text {
               textFormat: Text.PlainText
               text: "Alert when a device goes offline or comes back online"
-              color: Qt.darker(root.barForeground, 1.5)
+              color: Qt.darker(Color.popups.text, 1.5)
               font.family: Style.font.family
               font.pixelSize: Style.font.caption * 0.85
               wrapMode: Text.WordWrap
@@ -641,7 +641,7 @@ Panel {
 
           ToggleSwitch {
             checked: root.notifyEnabled
-            foreground: root.barForeground
+            foreground: Color.popups.text
             onToggled: {
               root.notifyEnabled = !root.notifyEnabled
               root.persistSettingsQuietly()
@@ -652,13 +652,13 @@ Panel {
         Text {
           textFormat: Text.PlainText
           text: "Router IP (e.g. 192.168.68.1)"
-          color: root.barForeground
+          color: Color.popups.text
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
         }
         TextField {
           Layout.fillWidth: true
-          foreground: root.barForeground
+          foreground: Color.popups.text
           text: root.fieldHost
           onTextChanged: root.fieldHost = text
         }
@@ -666,13 +666,13 @@ Panel {
         Text {
           textFormat: Text.PlainText
           text: "Admin username"
-          color: root.barForeground
+          color: Color.popups.text
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
         }
         TextField {
           Layout.fillWidth: true
-          foreground: root.barForeground
+          foreground: Color.popups.text
           text: root.fieldUsername
           onTextChanged: root.fieldUsername = text
         }
@@ -680,13 +680,13 @@ Panel {
         Text {
           textFormat: Text.PlainText
           text: "Admin password"
-          color: root.barForeground
+          color: Color.popups.text
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
         }
         TextField {
           Layout.fillWidth: true
-          foreground: root.barForeground
+          foreground: Color.popups.text
           echoMode: TextInput.Password
           text: root.fieldPassword
           onTextChanged: root.fieldPassword = text
@@ -697,7 +697,7 @@ Panel {
           enabled: !root.testingConnection
           bordered: true
           focusable: true
-          foreground: root.barForeground
+          foreground: Color.popups.text
           onClicked: root.saveSettings()
         }
 
@@ -720,7 +720,7 @@ Panel {
         visible: !root.settingsMode && !root.depsReady
         text: root.installingDeps ? "Installing dependencies…" : "Dependencies not installed yet."
         textFormat: Text.PlainText
-        color: root.barForeground
+        color: Color.popups.text
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
         wrapMode: Text.WordWrap
@@ -733,7 +733,7 @@ Panel {
         enabled: !root.installingDeps
         bordered: true
         focusable: true
-        foreground: root.barForeground
+        foreground: Color.popups.text
         onClicked: root.installDeps()
       }
 
@@ -752,7 +752,7 @@ Panel {
         textFormat: Text.PlainText
         visible: !root.settingsMode && root.depsReady && !root.lastError && root.allClients.length === 0
         text: "No devices found."
-        color: root.barForeground
+        color: Color.popups.text
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
       }
@@ -787,7 +787,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: root.isNodeCollapsed(modelData.mac) ? "" : "" // fa-chevron-right : fa-chevron-down
-                  color: root.barForeground
+                  color: Color.popups.text
                   opacity: 0.6
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
@@ -795,7 +795,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: root.routerGlyph
-                  color: root.barForeground
+                  color: Color.popups.text
                   opacity: 0.8
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
@@ -803,7 +803,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: modelData.name + (modelData.role === "master" ? " (main)" : "")
-                  color: root.barForeground
+                  color: Color.popups.text
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
                   font.bold: true
@@ -813,7 +813,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: modelData.clients.length + " device" + (modelData.clients.length === 1 ? "" : "s")
-                  color: root.barForeground
+                  color: Color.popups.text
                   opacity: 0.5
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
@@ -825,7 +825,7 @@ Panel {
               textFormat: Text.PlainText
               visible: !!modelData.via && !root.isNodeCollapsed(modelData.mac)
               text: "via " + modelData.via + (modelData.via_dbm !== null ? " (" + modelData.via_dbm + "dBm)" : "")
-              color: root.barForeground
+              color: Color.popups.text
               opacity: 0.5
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
@@ -848,7 +848,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: modelData.name
-                  color: root.barForeground
+                  color: Color.popups.text
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
                   Layout.fillWidth: true
@@ -862,7 +862,7 @@ Panel {
                   text: (modelData.down_kbps > 0 || modelData.up_kbps > 0)
                     ? "↓" + root.formatSpeed(modelData.down_kbps) + " ↑" + root.formatSpeed(modelData.up_kbps)
                     : modelData.ip
-                  color: root.barForeground
+                  color: Color.popups.text
                   opacity: 0.6
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
@@ -904,7 +904,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: root.offlineSectionExpanded ? "" : "" // fa-chevron-down : fa-chevron-right
-                  color: root.barForeground
+                  color: Color.popups.text
                   opacity: 0.6
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
@@ -912,7 +912,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: root.routerGlyph
-                  color: root.barForeground
+                  color: Color.popups.text
                   opacity: 0.8
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
@@ -920,7 +920,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: "Offline"
-                  color: root.barForeground
+                  color: Color.popups.text
                   opacity: 0.7
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
@@ -930,7 +930,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   text: root.offlineDevices.length + " device" + (root.offlineDevices.length === 1 ? "" : "s")
-                  color: root.barForeground
+                  color: Color.popups.text
                   opacity: 0.5
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
@@ -955,7 +955,7 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: modelData.name
-                color: root.barForeground
+                color: Color.popups.text
                 opacity: 0.7
                 font.family: Style.font.family
                 font.pixelSize: Style.font.caption
@@ -972,7 +972,7 @@ Panel {
                 // which isn't guaranteed every poll (see the clock Timer
                 // below).
                 text: { var _t = root.clock; return root.formatElapsed(Date.now() - modelData.offlineSince) }
-                color: root.barForeground
+                color: Color.popups.text
                 opacity: 0.4
                 font.family: Style.font.family
                 font.pixelSize: Style.font.caption
