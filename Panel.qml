@@ -28,6 +28,10 @@ Panel {
   readonly property real totalDownKbps: allClients.reduce(function (sum, d) { return sum + (d.down_kbps || 0) }, 0)
   readonly property real totalUpKbps: allClients.reduce(function (sum, d) { return sum + (d.up_kbps || 0) }, 0)
   property string lastError: ""
+  // Epoch ms of the last successful poll (0 = none yet). On a failed poll
+  // the previous nodes stay on screen alongside the error, and this says
+  // how old they are.
+  property double lastUpdated: 0
 
   // deco_status.py needs requests + pycryptodome, which aren't part of
   // Omarchy's own Python. Installing them is a network fetch + code
@@ -233,6 +237,11 @@ Panel {
   property string fieldHost: ""
   property string fieldUsername: "admin"
   property string fieldPassword: ""
+  // True once the password lives in the system keyring (libsecret) rather
+  // than in config.json — then config.json carries "keyring": true and no
+  // password, and deco_status.py fetches it with `secret-tool lookup`.
+  property bool passwordInKeyring: false
+  property bool keyringAvailable: false
 
   // Outside the plugin directory for the same reason tapo-cameras keeps its
   // config there: Omarchy hot-reloads the whole plugin on any file change
@@ -270,6 +279,15 @@ Panel {
   function close() { root.controller.hide() }
   function toggle() { root.opened ? root.close() : root.open() }
 
+  // Lets a keybind or script open the panel, e.g. `omarchy shell ipc call deco-mesh toggle`
+  IpcHandler {
+    enabled: root.manageIpc === false
+    target: root.ipcTarget
+    function open(): void { root.open() }
+    function close(): void { root.close() }
+    function toggle(): void { root.toggle() }
+  }
+
   function refresh() {
     if (!root.depsReady || statusProc.running) return
     statusProc.capturedOut = ""
@@ -302,34 +320,58 @@ Panel {
   property bool testingConnection: false
   property string testMessage: ""
 
-  function saveSettings() {
+  function writeConfig() {
     var config = {
       host: root.fieldHost,
       username: root.fieldUsername,
-      password: root.fieldPassword,
       notifyEnabled: root.notifyEnabled
     }
+    if (root.passwordInKeyring) config.keyring = true
+    else config.password = root.fieldPassword
     configFile.setText(JSON.stringify(config, null, 2))
     configFile.waitForJob()
     chmodProc.running = true
+  }
+
+  function saveSettings() {
     root.testingConnection = true
     root.testMessage = ""
+    // Blank field with a keyring-held password means "keep the current one".
+    if (root.keyringAvailable && root.fieldPassword !== "") {
+      keyringStoreProc.running = true  // continues in its onExited
+      return
+    }
+    root.writeConfig()
     root.refresh()
+  }
+
+  // Password goes in via the environment, not argv: /proc/<pid>/environ is
+  // readable only by this user, whereas /proc/<pid>/cmdline is world-readable.
+  Process {
+    id: keyringStoreProc
+    environment: ({ DECO_PW: root.fieldPassword })
+    command: ["sh", "-c",
+      "printf %s \"$DECO_PW\" | secret-tool store --label='Omarchy Deco Mesh' service omarchy-deco-mesh"]
+    onExited: function (exitCode) {
+      // Keyring refused (locked/unavailable): fall back to config.json
+      // rather than losing the password the user just typed.
+      root.passwordInKeyring = exitCode === 0
+      root.writeConfig()
+      root.refresh()
+    }
+  }
+
+  Process {
+    id: keyringProbeProc
+    command: ["sh", "-c", "command -v secret-tool >/dev/null"]
+    onExited: function (exitCode) { root.keyringAvailable = exitCode === 0 }
   }
 
   // Flipping the notification toggle shouldn't re-test the router
   // connection (that's what the "Save" button on the credential fields is
   // for) — just persist the current field values quietly.
   function persistSettingsQuietly() {
-    var config = {
-      host: root.fieldHost,
-      username: root.fieldUsername,
-      password: root.fieldPassword,
-      notifyEnabled: root.notifyEnabled
-    }
-    configFile.setText(JSON.stringify(config, null, 2))
-    configFile.waitForJob()
-    chmodProc.running = true
+    root.writeConfig()
   }
 
   FileView {
@@ -344,6 +386,7 @@ Panel {
         root.fieldHost = config.host || ""
         root.fieldUsername = config.username || "admin"
         root.fieldPassword = config.password || ""
+        root.passwordInKeyring = config.keyring === true && !config.password
         root.notifyEnabled = config.notifyEnabled !== false
       } catch (e) { /* first run: no config yet */ }
     }
@@ -474,6 +517,7 @@ Panel {
 
   Component.onCompleted: {
     mkdirProc.running = true
+    keyringProbeProc.running = true
     chmodProc.running = true  // covers a config.json left over from before this fix
     deviceStateFile.reload()
     deviceStateFile.waitForJob()  // must land before refresh() can be called
@@ -506,10 +550,12 @@ Panel {
     function handleResult() {
       var newNodes = []
       var errorText = ""
+      var keepStale = false
       try {
         var result = JSON.parse(statusProc.capturedOut)
         if (result.error) {
           errorText = result.error === "not_configured" ? "Not set up yet" : root.friendlyError(result.error)
+          keepStale = result.error !== "not_configured" && root.nodes.length > 0
         } else {
           newNodes = result.nodes || []
           var flatClients = []
@@ -525,6 +571,7 @@ Panel {
         }
       } catch (e) {
         errorText = "Couldn't read status"
+        keepStale = root.nodes.length > 0
       }
 
       if (root.testingConnection) {
@@ -534,7 +581,8 @@ Panel {
             + " device(s) across " + newNodes.length + " node(s)."
       }
       root.lastError = errorText
-      root.nodes = newNodes
+      if (!errorText) root.lastUpdated = Date.now()
+      if (!keepStale) root.nodes = newNodes
     }
   }
 
@@ -542,6 +590,9 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
+    // Tints the icon with the bar's urgent colour when the Deco can't be
+    // reached (but not for plain "not set up yet", which isn't a fault).
+    active: root.lastError !== "" && root.lastError !== "Not set up yet"
     text: root.routerGlyph
     slotSize: Style.bar.statusSlot
     tooltipText: root.lastError ? "Deco Mesh: " + root.lastError
@@ -592,6 +643,15 @@ Panel {
           font.pixelSize: Style.font.body
           font.bold: true
           Layout.fillWidth: true
+        }
+
+        Text {
+          visible: !root.settingsMode && root.lastUpdated > 0
+          textFormat: Text.PlainText
+          text: (root.lastError ? "Stale · " : "Updated ") + Qt.formatTime(new Date(root.lastUpdated), "HH:mm")
+          color: root.lastError ? (root.bar ? root.bar.urgent : Color.urgent) : Qt.darker(Color.popups.text, 1.5)
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption * 0.85
         }
 
         PanelActionButton {
@@ -688,6 +748,7 @@ Panel {
           Layout.fillWidth: true
           foreground: Color.popups.text
           echoMode: TextInput.Password
+          placeholderText: root.passwordInKeyring ? "Stored in keyring — leave blank to keep" : ""
           text: root.fieldPassword
           onTextChanged: root.fieldPassword = text
         }

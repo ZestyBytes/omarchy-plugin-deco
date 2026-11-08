@@ -6,13 +6,16 @@ success — the widget only cares about stdout.
 
 Config (host/username/password) lives in:
     ~/.local/state/omarchy/deco-mesh/config.json
-as plain JSON: {"host": "...", "username": "admin", "password": "..."}
+as JSON: {"host": "...", "username": "admin", "password": "..."}, or with
+"keyring": true and no password, in which case the password is read from the
+system keyring (libsecret: service=omarchy-deco-mesh).
 That file is created/edited by the widget's settings screen, not by hand.
 """
 import base64
 import codecs
 import hashlib
 import json
+import subprocess
 import os
 import re
 import sys
@@ -31,6 +34,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 REQUEST_TIMEOUT = 20
 
 CONFIG_PATH = os.path.expanduser("~/.local/state/omarchy/deco-mesh/config.json")
+KEYRING_SERVICE = "omarchy-deco-mesh"
 
 
 class Deco:
@@ -220,6 +224,18 @@ def decode_name(raw):
         return raw
 
 
+def keyring_password():
+    """Password stored by the panel in the system keyring (libsecret), or None."""
+    try:
+        out = subprocess.run(
+            ["secret-tool", "lookup", "service", KEYRING_SERVICE],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return out.stdout if out.returncode == 0 and out.stdout else None
+
+
 def main():
     try:
         with open(CONFIG_PATH) as f:
@@ -232,7 +248,13 @@ def main():
         return
 
     try:
-        deco = Deco(config["host"], config.get("username", "admin"), config["password"])
+        password = config.get("password") or ""
+        if not password and config.get("keyring"):
+            password = keyring_password()
+            if not password:
+                print(json.dumps({"error": "Couldn't read the password from the system keyring — re-enter it in settings."}))
+                return
+        deco = Deco(config["host"], config.get("username", "admin"), password)
         deco.login()
         mesh_nodes = deco.device_list()
         # "previous" is the mac of the node each hops its backhaul through —

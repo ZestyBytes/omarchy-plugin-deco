@@ -67,10 +67,17 @@ API family, notably [amosyuen/ha-tplink-deco](https://github.com/amosyuen/ha-tpl
 `Panel.qml` runs it every 60 seconds via a background `Process` and renders
 whatever JSON comes back; it never talks to the Deco directly.
 
-Your Deco's host/username/password are saved as plain JSON at
+Your Deco's host/username are saved as JSON at
 `~/.local/state/omarchy/deco-mesh/config.json` (0600 permissions) — outside
 the plugin's own directory, so editing it doesn't retrigger Omarchy's
-plugin hot-reload.
+plugin hot-reload. If `secret-tool` (libsecret) is available, the password
+is stored in your system keyring (service `omarchy-deco-mesh`) when you Save
+and `config.json` just says `"keyring": true`; leave the password field
+blank to keep the stored one. If there's no keyring, or it refuses, the
+password falls back to plain text in `config.json`.
+
+You can also open the panel from a keybind or script:
+`qs ipc call deco-mesh toggle`.
 
 ## Limitations
 
